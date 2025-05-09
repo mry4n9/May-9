@@ -7,7 +7,7 @@ import json
 from utils.text_extractor import extract_text_from_url, extract_text_from_file
 from utils.ai_helper import summarize_text_with_ai, generate_content_with_ai
 from utils.prompt_builder import (
-    get_combined_context, create_email_prompt, 
+    get_combined_context, create_email_prompt,
     create_linkedin_facebook_prompt, create_google_search_prompt,
     create_google_display_prompt, create_reasoning_prompt
 )
@@ -24,7 +24,6 @@ def get_company_name_from_url(url):
             url = 'https://' + url
         parsed_url = urlparse(url)
         domain_parts = parsed_url.netloc.split('.')
-        # Handle cases like 'subdomain.example.co.uk' or 'example.com'
         if len(domain_parts) > 2 and domain_parts[-2] not in ['co', 'com', 'org', 'net', 'gov', 'edu']:
             return domain_parts[-2]
         elif len(domain_parts) > 1:
@@ -60,7 +59,7 @@ st.sidebar.subheader("2. Campaign Details")
 lead_objective_options = ["Demo Booking", "Sales Meeting"]
 lead_objective_choice = st.sidebar.selectbox("Primary Lead Objective", lead_objective_options)
 
-content_count = st.sidebar.slider("Content Versions per Objective (Email, LinkedIn, Facebook)", 1, 20, 1) # Default to 1 for faster testing
+content_count = st.sidebar.slider("Content Versions per Objective (Email, LinkedIn, Facebook)", 1, 20, 1)
 
 st.sidebar.subheader("3. Links for Ads")
 learn_more_link = st.sidebar.text_input("Link for 'Learn More' (Brand Awareness)", "https://example.com/learn-more")
@@ -89,23 +88,25 @@ with col1:
         )
         st.info("The Excel file contains multiple sheets: Email, LinkedIn, FaceBook, Google Search, Google Display, and Reasoning.")
     elif st.session_state.error_messages:
-        for error in st.session_state.error_messages:
+        # Display accumulated errors
+        unique_errors = list(dict.fromkeys(st.session_state.error_messages)) # Remove duplicates for display
+        for error in unique_errors:
             st.error(error)
     else:
         st.info("Configure inputs in the sidebar and click 'Generate Content' to begin.")
 
 with col2:
-    st.image("https://streamlit.io/images/brand/streamlit-logo-secondary-colormark-darktext.png", width=200) # Placeholder image
+    st.image("https://streamlit.io/images/brand/streamlit-logo-secondary-colormark-darktext.png", width=200)
     if st.sidebar.button("✨ Generate Content", type="primary", use_container_width=True):
         st.session_state.generation_complete = False
         st.session_state.excel_bytes = None
         st.session_state.excel_filename = ""
-        st.session_state.error_messages = []
+        st.session_state.error_messages = [] # Clear previous errors
 
         if not client_url:
             st.sidebar.error("Client's Website URL is required.")
             st.stop()
-        
+
         api_key = st.secrets.get("OPENAI_API_KEY")
         if not api_key:
             st.sidebar.error("OpenAI API key not found in secrets.toml.")
@@ -113,20 +114,25 @@ with col2:
 
         progress_bar = st.sidebar.progress(0)
         status_text = st.sidebar.empty()
-        
-        total_steps = 5 # Context extraction/summarization
+
+        total_steps = 5 # Context extraction/summarization (max steps, some might be skipped)
         total_steps += content_count # Emails
         total_steps += 3 * content_count # LinkedIn (3 objectives)
         total_steps += 3 * content_count # Facebook (3 objectives)
         total_steps += 2 # Google Search & Display
         total_steps += 1 # Reasoning
         total_steps += 1 # Excel creation
-        current_step = 0
+        
+        # current_step will be a global variable modified by update_progress
+        # It needs to be initialized here before update_progress is defined and uses it.
+        current_step = 0 
 
         def update_progress(message):
-            nonlocal current_step
+            global current_step # CORRECTED: Use global for module-level variables
             current_step += 1
-            progress_bar.progress(current_step / total_steps)
+            # Ensure progress doesn't exceed 1.0 if total_steps is an estimate
+            progress_value = min(1.0, current_step / total_steps if total_steps > 0 else 0)
+            progress_bar.progress(progress_value)
             status_text.info(f"⏳ {message}")
 
         all_ad_data = {
@@ -140,7 +146,7 @@ with col2:
             # 1. Extract and Summarize Context
             update_progress("Extracting website content...")
             url_text = extract_text_from_url(client_url)
-            if "Error" in (url_text or ""): 
+            if "Error" in (url_text or ""):
                 st.session_state.error_messages.append(f"URL Text Extraction: {url_text}")
             else:
                 update_progress("Summarizing website content...")
@@ -168,12 +174,13 @@ with col2:
                     update_progress("Summarizing downloadable material...")
                     summaries['downloadable'] = summarize_text_with_ai(downloadable_text)
                     if "Error" in (summaries['downloadable'] or ""): st.session_state.error_messages.append(f"Downloadable Material Summary: {summaries['downloadable']}")
-            
-            full_context_for_prompts = get_combined_context(summaries['url'], summaries['additional'], summaries['downloadable'])
-            if "No context" in full_context_for_prompts and not st.session_state.error_messages:
-                 st.session_state.error_messages.append("No usable context was extracted or summarized. Cannot generate ads.")
-                 raise ValueError("Context extraction failed.")
 
+            full_context_for_prompts = get_combined_context(summaries['url'], summaries['additional'], summaries['downloadable'])
+            if "No context" in full_context_for_prompts and not (summaries['url'] or summaries['additional'] or summaries['downloadable']): # Check if any summary was successful
+                 st.session_state.error_messages.append("No usable context was extracted or summarized. Cannot generate ads effectively.")
+                 # We might still proceed if some partial context exists, but warn the user.
+                 # For now, let's allow proceeding but the quality might be low.
+                 # If you want to stop: raise ValueError("Context extraction failed.")
 
             # 2. Generate Ad Content
             # Emails
@@ -192,7 +199,7 @@ with col2:
                 "FaceBook": {"objectives": ["Brand Awareness", "Demand Gen", "Demand Capture"], "key": "facebook"}
             }
             cta_map = {
-                "LinkedIn": {"Brand Awareness": "Learn More", "Demand Gen": "Download", "Demand Capture": "Request Demo"}, # Can also be Register
+                "LinkedIn": {"Brand Awareness": "Learn More", "Demand Gen": "Download", "Demand Capture": "Request Demo"},
                 "FaceBook": {"Brand Awareness": "Learn More", "Demand Gen": "Download", "Demand Capture": "Book Now"}
             }
 
@@ -203,17 +210,16 @@ with col2:
                         prompt = create_linkedin_facebook_prompt(platform_name, full_context_for_prompts, lead_objective_choice, links_for_ads, ad_obj, i + 1)
                         response = generate_content_with_ai(prompt)
                         if isinstance(response, dict) and "error" not in response:
-                            # Add destination URL and CTA button programmatically
                             if ad_obj == "Brand Awareness":
-                                response["destination_url"] = links_for_ads['learn_more']
+                                response["destination_url"] = links_for_ads.get('learn_more', '#')
                                 response["cta_button"] = cta_map[platform_name][ad_obj]
                             elif ad_obj == "Demand Gen":
-                                response["destination_url"] = links_for_ads['downloadable']
+                                response["destination_url"] = links_for_ads.get('downloadable', '#')
                                 response["cta_button"] = cta_map[platform_name][ad_obj]
                             elif ad_obj == "Demand Capture":
-                                response["destination_url"] = links_for_ads['objective_link']
+                                response["destination_url"] = links_for_ads.get('objective_link', '#')
                                 response["cta_button"] = cta_map[platform_name][ad_obj]
-                            response["objective_type"] = ad_obj # For Excel sorting
+                            response["objective_type"] = ad_obj
                             all_ad_data[config["key"]].append(response)
                         else: st.session_state.error_messages.append(f"{platform_name} {ad_obj} V{i+1} Error: {response.get('error', response) if isinstance(response, dict) else response}")
 
@@ -243,39 +249,44 @@ with col2:
                 'linkedin_awareness': sum(1 for ad in all_ad_data['linkedin'] if ad.get("objective_type") == "Brand Awareness"),
                 'linkedin_demand_gen': sum(1 for ad in all_ad_data['linkedin'] if ad.get("objective_type") == "Demand Gen"),
                 'linkedin_demand_capture': sum(1 for ad in all_ad_data['linkedin'] if ad.get("objective_type") == "Demand Capture"),
-                # Similar for Facebook
+                'facebook_awareness': sum(1 for ad in all_ad_data['facebook'] if ad.get("objective_type") == "Brand Awareness"),
+                'facebook_demand_gen': sum(1 for ad in all_ad_data['facebook'] if ad.get("objective_type") == "Demand Gen"),
+                'facebook_demand_capture': sum(1 for ad in all_ad_data['facebook'] if ad.get("objective_type") == "Demand Capture"),
             }
             prompt = create_reasoning_prompt(summaries['url'], summaries['additional'], summaries['downloadable'], generated_counts)
             ai_reasoning_text = generate_content_with_ai(prompt, expect_json=False)
-            
+
             all_ad_data['reasoning'] = {
                 'url_summary': summaries['url'] or "Not provided/extracted.",
                 'additional_summary': summaries['additional'] or "Not provided/extracted.",
                 'downloadable_summary': summaries['downloadable'] or "Not provided/extracted.",
-                'ai_reasoning': ai_reasoning_text if "Error" not in ai_reasoning_text else "Could not generate AI reasoning."
+                'ai_reasoning': ai_reasoning_text if not (isinstance(ai_reasoning_text, str) and "Error" in ai_reasoning_text) else "Could not generate AI reasoning."
             }
-            if "Error" in ai_reasoning_text: st.session_state.error_messages.append(f"AI Reasoning Error: {ai_reasoning_text}")
+            if isinstance(ai_reasoning_text, str) and "Error" in ai_reasoning_text: st.session_state.error_messages.append(f"AI Reasoning Error: {ai_reasoning_text}")
 
 
             # 3. Create Excel Report
-            if not st.session_state.error_messages or \
-               any(val for val_list in [all_ad_data['email'], all_ad_data['linkedin'], all_ad_data['facebook']] for val in val_list) or \
-               all_ad_data['google_search'] or all_ad_data['google_display']: # Proceed if some data generated despite errors
+            # Check if any ad data was actually generated
+            has_data = any(all_ad_data[key] for key in ['email', 'linkedin', 'facebook', 'google_search', 'google_display'])
 
+            if has_data:
                 update_progress("Creating Excel report...")
                 company_name_for_file = get_company_name_from_url(client_url)
                 excel_bytes, excel_filename = create_excel_report(all_ad_data, company_name_for_file, lead_objective_choice)
-                
+
                 st.session_state.excel_bytes = excel_bytes
                 st.session_state.excel_filename = excel_filename
                 st.session_state.generation_complete = True
-                status_text.success("✅ Content generation complete! Download your report.")
+                if not st.session_state.error_messages:
+                    status_text.success("✅ Content generation complete! Download your report.")
+                else:
+                    status_text.warning("⚠️ Content generation partially complete with some errors. Report available.")
             else:
                 status_text.error("❌ Generation failed. No content to create Excel report. Check errors above.")
                 st.session_state.generation_complete = False
 
 
-        except ValueError as ve: # Catch specific error for context failure
+        except ValueError as ve:
             status_text.error(f"❌ Critical Error: {ve}")
             st.session_state.error_messages.append(str(ve))
             st.session_state.generation_complete = False
@@ -283,10 +294,9 @@ with col2:
             status_text.error(f"❌ An unexpected error occurred: {e}")
             st.session_state.error_messages.append(f"Unexpected Error: {str(e)}")
             st.session_state.generation_complete = False
-            # For debugging:
-            # import traceback
-            # st.error(traceback.format_exc())
+            # import traceback # For debugging
+            # st.error(traceback.format_exc()) # For debugging
         finally:
             progress_bar.progress(1.0)
-            # Force a rerun to update the main area with download button or errors
+            # Rerun to update the UI based on session state changes
             st.experimental_rerun()
