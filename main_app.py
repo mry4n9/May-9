@@ -88,8 +88,7 @@ with col1:
         )
         st.info("The Excel file contains multiple sheets: Email, LinkedIn, FaceBook, Google Search, Google Display, and Reasoning.")
     elif st.session_state.error_messages:
-        # Display accumulated errors
-        unique_errors = list(dict.fromkeys(st.session_state.error_messages)) # Remove duplicates for display
+        unique_errors = list(dict.fromkeys(st.session_state.error_messages))
         for error in unique_errors:
             st.error(error)
     else:
@@ -101,7 +100,7 @@ with col2:
         st.session_state.generation_complete = False
         st.session_state.excel_bytes = None
         st.session_state.excel_filename = ""
-        st.session_state.error_messages = [] # Clear previous errors
+        st.session_state.error_messages = []
 
         if not client_url:
             st.sidebar.error("Client's Website URL is required.")
@@ -115,22 +114,19 @@ with col2:
         progress_bar = st.sidebar.progress(0)
         status_text = st.sidebar.empty()
 
-        total_steps = 5 # Context extraction/summarization (max steps, some might be skipped)
-        total_steps += content_count # Emails
-        total_steps += 3 * content_count # LinkedIn (3 objectives)
-        total_steps += 3 * content_count # Facebook (3 objectives)
-        total_steps += 2 # Google Search & Display
-        total_steps += 1 # Reasoning
-        total_steps += 1 # Excel creation
+        total_steps = 5
+        total_steps += content_count
+        total_steps += 3 * content_count
+        total_steps += 3 * content_count
+        total_steps += 2
+        total_steps += 1
+        total_steps += 1
         
-        # current_step will be a global variable modified by update_progress
-        # It needs to be initialized here before update_progress is defined and uses it.
         current_step = 0 
 
         def update_progress(message):
-            global current_step # CORRECTED: Use global for module-level variables
+            global current_step
             current_step += 1
-            # Ensure progress doesn't exceed 1.0 if total_steps is an estimate
             progress_value = min(1.0, current_step / total_steps if total_steps > 0 else 0)
             progress_bar.progress(progress_value)
             status_text.info(f"⏳ {message}")
@@ -176,11 +172,8 @@ with col2:
                     if "Error" in (summaries['downloadable'] or ""): st.session_state.error_messages.append(f"Downloadable Material Summary: {summaries['downloadable']}")
 
             full_context_for_prompts = get_combined_context(summaries['url'], summaries['additional'], summaries['downloadable'])
-            if "No context" in full_context_for_prompts and not (summaries['url'] or summaries['additional'] or summaries['downloadable']): # Check if any summary was successful
+            if "No context" in full_context_for_prompts and not (summaries['url'] or summaries['additional'] or summaries['downloadable']):
                  st.session_state.error_messages.append("No usable context was extracted or summarized. Cannot generate ads effectively.")
-                 # We might still proceed if some partial context exists, but warn the user.
-                 # For now, let's allow proceeding but the quality might be low.
-                 # If you want to stop: raise ValueError("Context extraction failed.")
 
             # 2. Generate Ad Content
             # Emails
@@ -266,7 +259,6 @@ with col2:
 
 
             # 3. Create Excel Report
-            # Check if any ad data was actually generated
             has_data = any(all_ad_data[key] for key in ['email', 'linkedin', 'facebook', 'google_search', 'google_display'])
 
             if has_data:
@@ -294,9 +286,9 @@ with col2:
             status_text.error(f"❌ An unexpected error occurred: {e}")
             st.session_state.error_messages.append(f"Unexpected Error: {str(e)}")
             st.session_state.generation_complete = False
-            # import traceback # For debugging
-            # st.error(traceback.format_exc()) # For debugging
+            # import traceback
+            # st.error(traceback.format_exc())
         finally:
             progress_bar.progress(1.0)
             # Rerun to update the UI based on session state changes
-            st.experimental_rerun()
+            st.rerun() # CORRECTED: Use st.rerun()
